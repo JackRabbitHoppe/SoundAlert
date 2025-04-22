@@ -1,65 +1,58 @@
-# sound_alert_app.py
 import tkinter as tk
-#import sounddevice as sd
-import numpy as np
-#from playsound import playsound
-import threading
 from tkinter import messagebox
+import threading
 import pygame
 
+# Sounds events and lables
+SOUND_EVENTS = [
+    ("Option1_converted.wav", "Doorbell"),
+    ("gunshots2_x.wav", "Gunshots"),
+    ("ghost.wav", "Ghost"),
+    ("explosion_x.wav", "Explosion"),
+    ("fart_z.wav", "Fart"),
+    ("baby_cry.wav", "Baby Cry")
+]
 
+# Initialize pygame mixer
+pygame.mixer.init()
 
-def play_doorbell():
-    # Simulate a doorbell sound
-    playsound('doorbell.wav')  # make sure you have a sample sound file
+# GUI Setup
+root = tk.Tk()
+root.geometry("600x500")
+root.title("Sound Alert System")
 
-def show_alert():
-    alert = tk.Toplevel()
-    alert.geometry("300x100")
-    alert.title("Alert!")
-    label = tk.Label(alert, text="Doorbell Detected!", font=("Arial", 18))
-    label.pack(pady=20)
-    alert.after(3000, alert.destroy)
-
-def simulate_detection():
-    # Just simulate a sound detection for now
-    play_doorbell()
-    show_alert()
 
 def play_sound(file):
-    pygame.mixer.init()
-    pygame.mixer.music.load(file)
-    pygame.mixer.music.play()
+    try:
+        pygame.mixer.music.load(file)
+        pygame.mixer.music.play()
+    except Exception as e:
+        messagebox.showerror("Playback Error", str(e))
 
 
-def show_popup():
+def show_alert(label):
     popup = tk.Toplevel()
-    popup.title("Alert")
     popup.geometry("300x100")
+    popup.title("Alert!")
+    msg = f"Detected: {label}"
+    tk.Label(popup, text=msg, font=("Arial", 14)).pack(pady=20)
+    popup.after(3000, popup.destroy)
 
-    label = tk.Label(popup, text="Doorbell Detected!", font=("Arial", 14))
-    label.pack(pady=20)
 
-    popup.after(3000, popup.destroy)  # auto-close after 3 seconds
+def trigger_event(file, label):
+    def task():
+        try:
+            play_sound(file)
+            show_alert(label)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    threading.Thread(target=task).start()
 
-def show_message():
-    messagebox.showinfo("Alert", "Doorbell Detected!")
 
-# UI setup
-root = tk.Tk()
-root.geometry("1000x600")
-root.title("Sound Alert App")
+# GUI Elements
+tk.Label(root, text="Trigger Sound Alerts", font=("Arial", 12)).pack(pady=20)
 
-label = tk.Label(root, text="Simulated Sound Alert System", font=("Arial", 14))
-label.pack(pady=20)
-
-btn = tk.Button(root, text="Simulate Alert 1", width=20, command=lambda: threading.Thread(target=simulate_detection).start())
-btn.pack(pady=20)
-
-btn = tk.Button(root, text="Simulate Alert 2", width=20, command=show_popup)
-btn.pack(pady=20)
-
-btn = tk.Button(root, text="Simulate Alert 3", width=20, command=show_message)
-btn.pack(pady=20)
+for file, label in SOUND_EVENTS:
+    tk.Button(root, text=f"Simulate: {label}", width=30, command=lambda f=file, l=label: trigger_event(f, l)).pack(pady=5)
 
 root.mainloop()
