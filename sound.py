@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, colorchooser
+from tkinter import messagebox
 from ttkbootstrap import Style
 from ttkbootstrap.constants import *
 from ttkbootstrap import ttk
@@ -10,23 +10,19 @@ import json
 from datetime import datetime
 from twilio.rest import Client
 
-# Initialize themed style
-style = Style("superhero")  # Try: superhero, flatly, lumen, solar, etc.
+style = Style("superhero")
 root = style.master
-root.geometry("800x600")
+root.state('zoomed')
 root.title("\U0001F50A Sound Alert System")
 
-# Sound event directory
 SOUND_DIR = "SoundEvents"
 CONFIG_FILE = "sound_alert_config.json"
 
-# Twilio credentials (replace with your actual credentials)
-TWILIO_SID = 'ACbc1f53b68e79aa90fb61e02070ab34af'
-TWILIO_TOKEN = '0c49713f41c297e6592ecb1100324437'
+TWILIO_SID = ''
+TWILIO_TOKEN = ''
 TWILIO_FROM = '+18338639378'
-TO_PHONE = '+12818380414'
+TO_PHONE_VAR = tk.StringVar(value="2818380414")
 
-# Default configurations
 DEFAULT_EVENTS = [
     ("Option1_converted.wav", "Doorbell", {"bg": "#fff8dc", "size": "medium", "duration": 3000, "call": False}),
     ("gunshots2_x.wav", "Gunshots", {"bg": "#ffe4e1", "size": "large", "duration": 4000, "call": True}),
@@ -36,7 +32,6 @@ DEFAULT_EVENTS = [
     ("baby_cry.wav", "Baby Cry", {"bg": "#e0ffff", "size": "medium", "duration": 4500, "call": True})
 ]
 
-# Load or initialize sound events
 if os.path.exists(CONFIG_FILE):
     with open(CONFIG_FILE, "r") as f:
         config_data = json.load(f)
@@ -44,26 +39,35 @@ if os.path.exists(CONFIG_FILE):
 else:
     SOUND_EVENTS = DEFAULT_EVENTS.copy()
 
-# Size mapping
 SIZE_MAP = {
     "small": "200x80",
     "medium": "600x400",
     "large": "1000x800"
 }
 
-# Initialize pygame mixer
-pygame.mixer.init()
+COLOR_PRESETS = [
+    ("Red", "#ff4c4c"),
+    ("Green", "#4caf50"),
+    ("Blue", "#2196f3"),
+    ("Yellow", "#ffeb3b"),
+    ("Cyan", "#00bcd4"),
+    ("Magenta", "#e91e63"),
+    ("Orange", "#ff9800"),
+    ("Purple", "#9c27b0"),
+    ("Gray", "#9e9e9e")
+]
 
-# Log entries
+pygame.mixer.init()
 log_entries = []
 
 
 def make_alert_call(sound_label):
     try:
         client = Client(TWILIO_SID, TWILIO_TOKEN)
+        full_number = f"+1{TO_PHONE_VAR.get()}"
         call = client.calls.create(
             twiml=f'<Response><Say>Alert! {sound_label} detected.</Say></Response>',
-            to=TO_PHONE,
+            to=full_number,
             from_=TWILIO_FROM
         )
         print(f"Call initiated: {call.sid}")
@@ -71,8 +75,71 @@ def make_alert_call(sound_label):
         print(f"Call failed: {e}")
 
 
+def log_detection(label):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    entry = f"[{timestamp}] {label}"
+    log_entries.append(entry)
+
+
+def play_sound(file):
+    try:
+        full_path = os.path.join(SOUND_DIR, file)
+        pygame.mixer.music.load(full_path)
+        pygame.mixer.music.play()
+    except Exception as e:
+        messagebox.showerror("Playback Error", str(e))
+
+
+def fade_in(window, step=0.05):
+    alpha = 0.0
+    window.attributes('-alpha', alpha)
+    def _fade():
+        nonlocal alpha
+        alpha += step
+        if alpha <= 1.0:
+            window.attributes('-alpha', alpha)
+            window.after(30, _fade)
+    _fade()
+
+
+def show_alert(label, config):
+    bg_color = config.get("bg", "#ff0000")
+
+    popup = tk.Toplevel(root)
+    popup.geometry(SIZE_MAP.get(config["size"], "300x120"))
+    popup.title("\u26A0 Alert!")
+    popup.attributes("-topmost", True)
+
+    fade_in(popup)
+
+    canvas = tk.Canvas(popup, width=popup.winfo_width(), height=popup.winfo_height(), highlightthickness=0)
+    canvas.pack(fill="both", expand=True)
+
+    popup.update_idletasks()
+    width = popup.winfo_width()
+    height = popup.winfo_height()
+
+    canvas.create_rectangle(0, 0, width, height, fill=bg_color, outline=bg_color)
+    canvas.create_text(width // 2, height // 2, text=f"Detected: {label}", fill="black", font=("Arial", 20, "bold"))
+
+    popup.after(config["duration"], popup.destroy)
+
+
+def trigger_event(file, label, config):
+    def task():
+        try:
+            play_sound(file)
+            show_alert(label, config)
+            log_detection(label)
+            if config.get("call"):
+                make_alert_call(label)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+    threading.Thread(target=task).start()
+
+
 def show_log_window():
-    log_win = tk.Toplevel()
+    log_win = tk.Toplevel(root)
     log_win.geometry("300x400")
     log_win.title("Detection Log")
     ttk.Label(log_win, text="Detection Log", font=("Arial", 12, "bold")).pack(pady=5)
@@ -85,7 +152,7 @@ def show_log_window():
 
 def show_settings_window():
     settings = tk.Toplevel()
-    settings.geometry("520x520")
+    settings.geometry("600x600")
     settings.title("Customize Alerts")
 
     canvas = tk.Canvas(settings)
@@ -117,10 +184,8 @@ def show_settings_window():
                 updated_config["duration"] = 3000
             updated_events.append((file, label, updated_config))
 
-        # Update global SOUND_EVENTS
         SOUND_EVENTS = updated_events
 
-        # Save to JSON
         data = [
             {"file": file, "label": label, "config": config}
             for file, label, config in SOUND_EVENTS
@@ -128,21 +193,27 @@ def show_settings_window():
         with open(CONFIG_FILE, "w") as f:
             json.dump(data, f, indent=2)
 
-        # Re-render buttons
-        for widget in button_frame.winfo_children():
+        for widget in center_frame.winfo_children():
             widget.destroy()
 
-        ttk.Label(button_frame, text="\U0001F4E2 Sound Alert System", font=("Arial", 18, "bold")).pack(pady=10)
+        ttk.Label(center_frame, text="\U0001F4E2 Sound Alert System", font=("Arial", 24, "bold")).pack(pady=(0, 20))
+        ttk.Label(center_frame, text="Trigger Sound Events", font=("Arial", 16)).pack()
         for file, label, config in SOUND_EVENTS:
             ttk.Button(
-                button_frame,
+                center_frame,
                 text=f"▶ {label}",
                 width=30,
                 command=lambda f=file, l=label, c=config: trigger_event(f, l, c)
             ).pack(pady=5)
 
-        settings.destroy()
+        control_frame = ttk.Frame(center_frame, padding=10)
+        control_frame.pack(pady=(20, 0))
+        ttk.Button(control_frame, text="View Log", width=18, bootstyle=INFO, command=show_log_window).pack(side="left", padx=5)
+        ttk.Button(control_frame, text="Customize Alerts", width=18, bootstyle=PRIMARY, command=show_settings_window).pack(side="left", padx=5)
+        ttk.Label(control_frame, text="Phone to Call:").pack(side="left", padx=5)
+        ttk.Entry(control_frame, textvariable=TO_PHONE_VAR, width=15).pack(side="left")
 
+        settings.destroy()
 
     def reset_defaults():
         global SOUND_EVENTS
@@ -177,14 +248,24 @@ def show_settings_window():
         duration_vars.append(duration_var)
         call_vars.append(call_var)
 
-        def choose_color(var=color_var):
-            color = colorchooser.askcolor(title="Choose background color")[1]
-            if color:
-                var.set(color)
-
         ttk.Label(frame, text="Background:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(frame, textvariable=color_var, width=12).grid(row=0, column=1)
-        ttk.Button(frame, text="Pick", command=choose_color).grid(row=0, column=2)
+
+        preview = tk.Label(frame, width=3, background=color_var.get(), relief="solid")
+        preview.grid(row=0, column=2, padx=(5, 0))
+
+        def update_color_preview(var=color_var, widget=preview):
+            widget.configure(bg=var.get())
+
+        color_var.trace_add("write", lambda *_: update_color_preview())
+
+        preset_menu = ttk.OptionMenu(
+            frame,
+            color_var,
+            color_var.get(),
+            *[label for label, hexcode in COLOR_PRESETS],
+            command=lambda selected_label, var=color_var, widget=preview: (var.set(dict(COLOR_PRESETS)[selected_label]), widget.configure(bg=dict(COLOR_PRESETS)[selected_label]))
+        )
+        preset_menu.grid(row=0, column=1, sticky="w")
 
         ttk.Label(frame, text="Size:").grid(row=1, column=0, sticky="w")
         ttk.OptionMenu(frame, size_var, size_var.get(), "small", "medium", "large").grid(row=1, column=1)
@@ -199,80 +280,35 @@ def show_settings_window():
     ttk.Button(btn_frame, text="Save", command=save_changes, bootstyle=SUCCESS).pack(side="left", padx=5)
     ttk.Button(btn_frame, text="Reset to Default", command=reset_defaults, bootstyle=WARNING).pack(side="left", padx=5)
 
+# Centered frame for content
+center_frame = ttk.Frame(root, padding=20)
+center_frame.place(relx=0.5, rely=0.5, anchor="center")
 
-def log_detection(label):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    entry = f"[{timestamp}] {label}"
-    log_entries.append(entry)
+# Header
+ttk.Label(center_frame, text="\U0001F4E2 Sound Alert System", font=("Arial", 24, "bold")).pack(pady=(0, 20))
 
-
-def play_sound(file):
-    try:
-        full_path = os.path.join(SOUND_DIR, file)
-        pygame.mixer.music.load(full_path)
-        pygame.mixer.music.play()
-    except Exception as e:
-        messagebox.showerror("Playback Error", str(e))
-
-
-def show_alert(label, config):
-    bg_color = config.get("bg", "#ff0000")
-
-    popup = tk.Toplevel(root)
-    popup.geometry(SIZE_MAP.get(config["size"], "300x120"))
-    popup.title("\u26A0 Alert!")
-    popup.attributes("-topmost", True)
-
-    canvas = tk.Canvas(popup, width=popup.winfo_width(), height=popup.winfo_height(), highlightthickness=0)
-    canvas.pack(fill="both", expand=True)
-
-    # Wait until window actually renders to get correct dimensions
-    popup.update_idletasks()
-    width = popup.winfo_width()
-    height = popup.winfo_height()
-
-    # Draw a rectangle that fills the canvas
-    canvas.create_rectangle(0, 0, width, height, fill=bg_color, outline=bg_color)
-
-    # Draw the alert text
-    canvas.create_text(
-        width // 2, height // 2,
-        text=f"Detected: {label}",
-        fill="black",
-        font=("Arial", 20, "bold")
-    )
-
-    popup.after(config["duration"], popup.destroy)
-
-
-def trigger_event(file, label, config):
-    def task():
-        try:
-            play_sound(file)
-            show_alert(label, config)
-            log_detection(label)
-            if config.get("call"):
-                make_alert_call(label)
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
-    threading.Thread(target=task).start()
-
-
-# Sound buttons frame
-button_frame = ttk.Frame(root, padding=10)
-button_frame.place(x=200, y=60)
-ttk.Label(button_frame, text="\U0001F4E2 Sound Alert System", font=("Arial", 18, "bold")).pack(pady=10)
-
+# Buttons
+ttk.Label(center_frame, text="Trigger Sound Events", font=("Arial", 16)).pack()
 for file, label, config in SOUND_EVENTS:
     ttk.Button(
-        button_frame,
+        center_frame,
         text=f"▶ {label}",
         width=30,
         command=lambda f=file, l=label, c=config: trigger_event(f, l, c)
     ).pack(pady=5)
 
-# Top bar buttons
-ttk.Button(root, text="View Log", width=15, bootstyle=INFO, command=show_log_window).place(x=20, y=20)
-ttk.Button(root, text="Customize Alerts", width=18, bootstyle=PRIMARY, command=show_settings_window).place(x=640, y=20)
+# Bottom controls
+control_frame = ttk.Frame(center_frame, padding=10)
+control_frame.pack(pady=(20, 0))
+
+# Log and Customize
+ttk.Button(control_frame, text="View Log", width=18, bootstyle=INFO, command=show_log_window).pack(side="left", padx=5)
+ttk.Button(control_frame, text="Customize Alerts", width=18, bootstyle=PRIMARY, command=show_settings_window).pack(side="left", padx=5)
+
+# Phone entry
+ttk.Label(control_frame, text="Phone to Call:").pack(side="left", padx=5)
+ttk.Entry(control_frame, textvariable=TO_PHONE_VAR, width=15).pack(side="left")
 
 root.mainloop()
+
+
